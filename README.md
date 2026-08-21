@@ -136,6 +136,10 @@ By default, `sp_list_tasks` **excludes completed tasks** (`includeDone` defaults
 
 Issues and PRs are welcome. If you hit a bug or want a tool that Super Productivity's Local REST API supports but this server doesn't yet expose, open an issue.
 
+## Support
+
+If this project saved you some time, you're welcome to [buy me a coffee ☕](https://ko-fi.com/mrswer).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
