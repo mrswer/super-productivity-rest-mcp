@@ -1,0 +1,37 @@
+{
+  "name": "super-productivity-rest-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that exposes Super Productivity's built-in Local REST API as MCP tools, so Claude (and any other MCP client) can list, create, update and control your tasks, projects and tags.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "super-productivity",
+    "claude",
+    "claude-code",
+    "task-management",
+    "productivity",
+    "rest-api"
+  ],
+  "license": "MIT",
+  "author": "Krzysztof",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mrswer/super-productivity-rest-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mrswer/super-productivity-rest-mcp/issues"
+  },
+  "homepage": "https://github.com/mrswer/super-productivity-rest-mcp#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.1"
+  }
+}
