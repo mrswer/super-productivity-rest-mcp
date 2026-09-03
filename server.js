@@ -442,7 +442,11 @@ const http = createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host || HTTP_HOST}`);
 
-  if (url.pathname !== HTTP_PATH) {
+  // Tolerate a trailing slash: clients are often configured with one (mcp-remote
+  // in particular), and a bare 404 there is a miserable thing to debug.
+  const stripSlash = (p) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
+
+  if (stripSlash(url.pathname) !== stripSlash(HTTP_PATH)) {
     // A tiny liveness probe so `curl http://127.0.0.1:3877/` shows something useful.
     if (url.pathname === "/" && req.method === "GET") {
       return sendJson(res, 200, {

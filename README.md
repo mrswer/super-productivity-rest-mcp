@@ -105,7 +105,20 @@ http://127.0.0.1:3877/mcp
 
 ### Claude Cowork / Claude Desktop
 
-Add a local MCP server (the same place you added your local Obsidian server) and point it at `http://127.0.0.1:3877/mcp`. No authentication, no OAuth — it's a localhost-only endpoint.
+Claude Desktop's `claude_desktop_config.json` only launches **stdio** commands, so it reaches an HTTP server through the [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge. Add this next to your other servers (`~/.config/Claude/claude_desktop_config.json` on Linux, `~/Library/Application Support/Claude/` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "super-productivity": {
+      "command": "npx",
+      "args": ["mcp-remote@latest", "http://127.0.0.1:3877/mcp"]
+    }
+  }
+}
+```
+
+No `--header` is needed: this endpoint has no authentication, and your `SP_REST_TOKEN` stays on the server side. Restart Claude Desktop afterwards.
 
 ### Claude Code
 
