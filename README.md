@@ -1,24 +1,32 @@
-# super-productivity-rest-mcp
+# super-productivity-rest-mcp — HTTP transport
 
 An [MCP](https://modelcontextprotocol.io) server that exposes [Super Productivity](https://super-productivity.com/)'s built-in **Local REST API** as MCP tools — so Claude (or any other MCP client) can list, create, update, archive and control your tasks, projects and tags through plain conversation.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![Transport: Streamable HTTP](https://img.shields.io/badge/transport-streamable--http-blue)
+
+> **Branches**
+> - **`http-transport`** (this branch) — serves MCP over **Streamable HTTP** on `http://127.0.0.1:3877/mcp`. Use this for **Claude Cowork** and any other client that connects to an MCP server by URL.
+> - **`main`** — the original **stdio** version, spawned as a local subprocess. Use that for Claude Code.
+>
+> Same 15 tools, same Super Productivity Local REST API underneath — only the transport differs.
 
 ## Why this exists
 
-Super Productivity ships with a [Local REST API](https://github.com/super-productivity/super-productivity/blob/master/docs/wiki/3.01-API.md) (`http://127.0.0.1:3876`), but it doesn't speak MCP — it's a plain REST API. This project is a thin, direct translation layer between the two, with a few design choices that set it apart from other Super Productivity MCP integrations:
+Super Productivity ships with a [Local REST API](https://github.com/super-productivity/super-productivity/blob/master/docs/wiki/3.01-API.md) (`http://127.0.0.1:3876`), but it doesn't speak MCP — it's a plain REST API. This project is a thin, direct translation layer between the two:
 
 - **Talks directly to the official Local REST API** — no Super Productivity plugin to install, no Node-execution permission to grant, no file-based polling. One HTTP request per tool call.
 - **Full coverage** of everything the Local REST API exposes: task CRUD (including delete), archive/restore, current-task control (start/stop/set/get), projects, tags, and health/status — 15 tools total, mapped 1:1 to the API's endpoints.
+- **URL-based transport.** Runs as a long-lived local HTTP server on `127.0.0.1:3877`, so clients that connect to MCP servers over a URL — Claude Cowork, Claude Desktop, the web UIs — can reach it exactly the way they reach a local Obsidian MCP server.
 - **Handles the access-token variant.** Some Super Productivity versions require a bearer token for the Local REST API and some don't — this server supports both via an optional environment variable.
-- **Zero extra runtime dependencies** beyond Node.js — no Python, no Super Productivity plugin bundle.
+- **Zero extra runtime dependencies** beyond Node.js and the MCP SDK — no Python, no Super Productivity plugin bundle, no web framework (the HTTP server is Node's built-in `node:http`).
 
 ## Prerequisites
 
 - [Super Productivity](https://super-productivity.com/) desktop app (Electron — the Local REST API is not available in the web version)
 - Node.js 18+
-- An MCP client — this README focuses on [Claude Code](https://code.claude.com/docs), but any MCP client that supports local (stdio) servers will work
+- An MCP client that connects to a server **by URL** — e.g. Claude Cowork or Claude Desktop. The client must run on the **same machine** as this server (the endpoint is bound to `127.0.0.1`).
 
 ## 1. Enable the Local REST API in Super Productivity
 
@@ -36,41 +44,69 @@ curl -i http://127.0.0.1:3876/tasks
 ## 2. Install
 
 ```bash
-git clone https://github.com/mrswer/super-productivity-rest-mcp.git
+git clone -b http-transport https://github.com/mrswer/super-productivity-rest-mcp.git
 cd super-productivity-rest-mcp
 npm install
 ```
 
-## 3. Register with Claude Code
+## 3. Run the server
 
-The server's name must come **before** the `--scope`/`-e` flags, or the CLI misparses the following arguments as more environment variables.
+Unlike the stdio version, this server is a **long-lived process** — start it yourself and leave it running (it does not get spawned on demand by the client).
 
 Without a token:
 
 ```bash
-claude mcp add super-productivity --scope user -- node /absolute/path/to/super-productivity-rest-mcp/server.js
+npm start
 ```
 
 With a token:
 
 ```bash
-claude mcp add super-productivity --scope user -e SP_REST_TOKEN=your-token-here -- node /absolute/path/to/super-productivity-rest-mcp/server.js
+SP_REST_TOKEN=your-token-here npm start
 ```
 
-`--scope user` registers the server for every project, in both the `claude` CLI and the Claude Code UI (they share the same `~/.claude.json`).
+You should see:
 
-Verify:
+```
+super-productivity-rest-mcp (Streamable HTTP) listening on http://127.0.0.1:3877/mcp
+Proxying Super Productivity Local REST API at http://127.0.0.1:3876
+```
+
+Keep this running in a terminal, or supervise it however you like (a `systemd --user` unit, `pm2`, a login item, etc.). To confirm it's up:
+
+```bash
+curl http://127.0.0.1:3877/
+# {"name":"super-productivity-rest-mcp","transport":"streamable-http","mcpEndpoint":"/mcp"}
+```
+
+## 4. Register with your MCP client
+
+The MCP endpoint is:
+
+```
+http://127.0.0.1:3877/mcp
+```
+
+### Claude Cowork / Claude Desktop
+
+Add a local MCP server (the same place you added your local Obsidian server) and point it at `http://127.0.0.1:3877/mcp`. No authentication, no OAuth — it's a localhost-only endpoint.
+
+### Claude Code
+
+Claude Code can also use an HTTP MCP server:
+
+```bash
+claude mcp add super-productivity --scope user --transport http http://127.0.0.1:3877/mcp
+```
 
 ```bash
 claude mcp list
-# super-productivity: node /path/to/server.js - ✔ Connected
+# super-productivity: http://127.0.0.1:3877/mcp (HTTP) - ✔ Connected
 ```
 
-### Other MCP clients
+### Any other MCP client
 
-Any client that supports local stdio servers works the same way — point it at `node /absolute/path/to/server.js`, and set `SP_REST_TOKEN` (and optionally `SP_REST_BASE_URL`) in its environment-variable configuration if needed. See `.env.example` for the variables this server reads (note: it does **not** load `.env` files automatically — your MCP client must pass real environment variables).
-
-> **Note on remote/cloud chat clients:** this server uses stdio transport and must run on the same machine as Super Productivity. It will not work with a cloud-hosted chat client (e.g. a browser-based Claude session) that requires a remote `https://` MCP endpoint — only with clients that can spawn a local process, such as Claude Code.
+Use its "remote"/"URL"/"HTTP" server option with `http://127.0.0.1:3877/mcp`. This server implements the **Streamable HTTP** transport (`POST` for requests, `GET` for the SSE stream, `DELETE` to end a session).
 
 ## Usage
 
@@ -108,28 +144,33 @@ By default, `sp_list_tasks` **excludes completed tasks** (`includeDone` defaults
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `SP_REST_TOKEN` | Only if your Super Productivity requires it | — | Bearer token from Settings → Misc → Access Token |
-| `SP_REST_BASE_URL` | No | `http://127.0.0.1:3876` | Override if running the server on a different host than Super Productivity |
+| `SP_REST_BASE_URL` | No | `http://127.0.0.1:3876` | Override if Super Productivity runs on a different host |
+| `MCP_HTTP_HOST` | No | `127.0.0.1` | Interface this server binds to. Keep it on loopback unless you know what you're doing |
+| `MCP_HTTP_PORT` | No | `3877` | Port for this server's MCP endpoint |
+| `MCP_HTTP_PATH` | No | `/mcp` | Path the MCP endpoint is served under |
+
+This server does **not** load `.env` files — export the variables in the shell that runs `npm start`. See `.env.example` for a template.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `✘ Failed to connect` in `claude mcp list` | Wrong path to `server.js`, or dependencies not installed | Check the path (`claude mcp get super-productivity`), run `npm install` in the project directory |
+| Client shows the server as failed / not connected | The server process isn't running, or the URL/port is wrong | Start it with `npm start`; check `curl http://127.0.0.1:3877/` |
+| `EADDRINUSE` on startup | Port 3877 already taken | Set `MCP_HTTP_PORT` to a free port and update the client URL |
 | "Could not reach Super Productivity's Local REST API" | Super Productivity isn't running, or the Local REST API is disabled | Start Super Productivity, enable it in Settings → Misc |
-| `401 Unauthorized` / "Authorization token required" | This installation requires a token that isn't configured | Get the token from Settings → Misc → Access Token, pass it as `SP_REST_TOKEN` (see step 3) |
-| `Invalid environment variable format: <server-name>` when running `claude mcp add` | Argument order — `-e` before the server name | Put the server name right after `add`, before `--scope`/`-e` |
+| `401 Unauthorized` / "Authorization token required" | This installation requires a token that isn't configured | Get the token from Settings → Misc → Access Token, start with `SP_REST_TOKEN=… npm start` |
 | Task counts don't match the Super Productivity UI | Completed tasks are excluded by default | Ask for "including completed tasks" |
 
 ## Security notes
 
-- The Local REST API only accepts connections from `127.0.0.1` — it is not reachable from other machines unless you deliberately expose it (not recommended).
-- This server runs as a local subprocess over stdio; it is not a network service and doesn't listen on any port itself.
-- Treat your `SP_REST_TOKEN`, if you have one, like any other credential — don't commit it, and pass it via your MCP client's environment-variable configuration rather than hardcoding it.
+- This server binds to `127.0.0.1` by default, so it's only reachable from the same machine. It has **no authentication** — anything that can reach the port has full control of your Super Productivity data. Don't set `MCP_HTTP_HOST=0.0.0.0` or expose the port through a tunnel/router without putting your own auth in front of it.
+- The Super Productivity Local REST API likewise only accepts connections from `127.0.0.1`.
+- Treat your `SP_REST_TOKEN`, if you have one, like any other credential — don't commit it, export it in the environment instead of hardcoding it.
 
 ## Limitations
 
 - Requires the Super Productivity **desktop** app (Electron) — the Local REST API isn't available in the web build.
-- Uses stdio transport only; there is no bundled HTTP/remote transport. If you need to reach this from a cloud-hosted MCP client, you'd need to front it with your own HTTP transport and a tunnel — out of scope for this project.
+- The server and the MCP client must run on the same machine (localhost-only, no auth). Exposing it beyond localhost is your responsibility to secure.
 - Re-parenting a task (moving it under a different parent) isn't supported by the underlying Local REST API — this is a limitation of Super Productivity's API, not this server.
 
 ## Contributing

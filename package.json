@@ -1,7 +1,7 @@
 {
   "name": "super-productivity-rest-mcp",
-  "version": "1.0.0",
-  "description": "MCP server that exposes Super Productivity's built-in Local REST API as MCP tools, so Claude (and any other MCP client) can list, create, update and control your tasks, projects and tags.",
+  "version": "2.0.0",
+  "description": "MCP server (Streamable HTTP transport) that exposes Super Productivity's built-in Local REST API as MCP tools, so Claude Cowork and any other URL-based MCP client can list, create, update and control your tasks, projects and tags.",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -13,6 +13,8 @@
     "super-productivity",
     "claude",
     "claude-code",
+    "claude-cowork",
+    "streamable-http",
     "task-management",
     "productivity",
     "rest-api"
