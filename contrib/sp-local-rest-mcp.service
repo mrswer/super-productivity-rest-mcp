@@ -1,0 +1,28 @@
+[Unit]
+Description=Super Productivity MCP server (Streamable HTTP)
+Documentation=https://github.com/mrswer/super-productivity-rest-mcp/tree/http-transport
+After=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/super-productivity-rest-mcp
+# Secrets live here, not in this unit file (mode 600).
+EnvironmentFile=%h/.config/sp-local-rest-mcp/env
+ExecStart=/usr/bin/node %h/super-productivity-rest-mcp/server.js
+Restart=on-failure
+RestartSec=5
+
+# The server only ever needs to talk to loopback and read its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+# NOTE: MemoryDenyWriteExecute must stay off — V8's JIT needs W->X memory and
+# Node crashes with SIGTRAP on startup if it is enabled.
+
+[Install]
+WantedBy=default.target

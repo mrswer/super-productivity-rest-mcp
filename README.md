@@ -72,12 +72,28 @@ super-productivity-rest-mcp (Streamable HTTP) listening on http://127.0.0.1:3877
 Proxying Super Productivity Local REST API at http://127.0.0.1:3876
 ```
 
-Keep this running in a terminal, or supervise it however you like (a `systemd --user` unit, `pm2`, a login item, etc.). To confirm it's up:
+Keep this running in a terminal, or supervise it however you like. To confirm it's up:
 
 ```bash
 curl http://127.0.0.1:3877/
 # {"name":"super-productivity-rest-mcp","transport":"streamable-http","mcpEndpoint":"/mcp"}
 ```
+
+### Running it as a background service (Linux)
+
+[`contrib/sp-local-rest-mcp.service`](contrib/sp-local-rest-mcp.service) is a `systemd --user` unit that starts the server at login and restarts it on failure. Put your token in an environment file so it never lands in the unit itself:
+
+```bash
+mkdir -p ~/.config/sp-local-rest-mcp && (umask 077 && printf 'SP_REST_TOKEN=your-token-here\n' > ~/.config/sp-local-rest-mcp/env)
+```
+
+```bash
+cp contrib/sp-local-rest-mcp.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now sp-local-rest-mcp.service
+```
+
+Adjust `WorkingDirectory`/`ExecStart` in the unit if you cloned somewhere other than `~/super-productivity-rest-mcp`, and check it came up with `systemctl --user status sp-local-rest-mcp`.
+
+> The unit deliberately does **not** set `MemoryDenyWriteExecute=true`. V8's JIT needs write-then-execute memory, so Node dies with `SIGTRAP` at startup under that hardening option — and because `Restart=on-failure` masks it, `systemctl status` can briefly read `active (running)` while the service is really crash-looping. Check `NRestarts` if in doubt.
 
 ## 4. Register with your MCP client
 
