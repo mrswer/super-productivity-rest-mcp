@@ -5,6 +5,12 @@ An [MCP](https://modelcontextprotocol.io) server that exposes [Super Productivit
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 
+> **Two transports, two branches — pick the one your client needs**
+> - **`main`** (this branch) — **stdio**. The client spawns the server as a local subprocess. This is what you want for **Claude Code**.
+> - **[`http-transport`](https://github.com/mrswer/super-productivity-rest-mcp/tree/http-transport)** — **Streamable HTTP** on `http://127.0.0.1:3877/mcp`, run as a long-lived local service. Use it for **Claude Cowork / Claude Desktop**, which reach it through the `mcp-remote` bridge.
+>
+> Same 15 tools and the same Local REST API underneath — only the transport differs.
+
 ## Why this exists
 
 Super Productivity ships with a [Local REST API](https://github.com/super-productivity/super-productivity/blob/master/docs/wiki/3.01-API.md) (`http://127.0.0.1:3876`), but it doesn't speak MCP — it's a plain REST API. This project is a thin, direct translation layer between the two, with a few design choices that set it apart from other Super Productivity MCP integrations:
@@ -18,7 +24,7 @@ Super Productivity ships with a [Local REST API](https://github.com/super-produc
 
 - [Super Productivity](https://super-productivity.com/) desktop app (Electron — the Local REST API is not available in the web version)
 - Node.js 18+
-- An MCP client — this README focuses on [Claude Code](https://code.claude.com/docs), but any MCP client that supports local (stdio) servers will work
+- An MCP client that can spawn a local (stdio) server — this README focuses on [Claude Code](https://code.claude.com/docs). For clients that connect by URL instead, see the [`http-transport`](https://github.com/mrswer/super-productivity-rest-mcp/tree/http-transport) branch.
 
 ## 1. Enable the Local REST API in Super Productivity
 
@@ -70,7 +76,7 @@ claude mcp list
 
 Any client that supports local stdio servers works the same way — point it at `node /absolute/path/to/server.js`, and set `SP_REST_TOKEN` (and optionally `SP_REST_BASE_URL`) in its environment-variable configuration if needed. See `.env.example` for the variables this server reads (note: it does **not** load `.env` files automatically — your MCP client must pass real environment variables).
 
-> **Note on remote/cloud chat clients:** this server uses stdio transport and must run on the same machine as Super Productivity. It will not work with a cloud-hosted chat client (e.g. a browser-based Claude session) that requires a remote `https://` MCP endpoint — only with clients that can spawn a local process, such as Claude Code.
+> **Note on clients that connect by URL:** this branch speaks stdio only, so a client that wants an MCP *endpoint* rather than a subprocess — Claude Cowork and Claude Desktop among them — cannot use it. The [`http-transport`](https://github.com/mrswer/super-productivity-rest-mcp/tree/http-transport) branch serves the same tools over Streamable HTTP on localhost for exactly that case. Either way the server must run on the same machine as Super Productivity.
 
 ## Usage
 
@@ -129,7 +135,7 @@ By default, `sp_list_tasks` **excludes completed tasks** (`includeDone` defaults
 ## Limitations
 
 - Requires the Super Productivity **desktop** app (Electron) — the Local REST API isn't available in the web build.
-- Uses stdio transport only; there is no bundled HTTP/remote transport. If you need to reach this from a cloud-hosted MCP client, you'd need to front it with your own HTTP transport and a tunnel — out of scope for this project.
+- This branch uses stdio transport only. If your client needs an HTTP endpoint, use the [`http-transport`](https://github.com/mrswer/super-productivity-rest-mcp/tree/http-transport) branch instead of building your own wrapper.
 - Re-parenting a task (moving it under a different parent) isn't supported by the underlying Local REST API — this is a limitation of Super Productivity's API, not this server.
 
 ## Contributing
