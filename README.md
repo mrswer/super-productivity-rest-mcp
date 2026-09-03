@@ -148,6 +148,8 @@ By default, `sp_list_tasks` **excludes completed tasks** (`includeDone` defaults
 | `MCP_HTTP_HOST` | No | `127.0.0.1` | Interface this server binds to. Keep it on loopback unless you know what you're doing |
 | `MCP_HTTP_PORT` | No | `3877` | Port for this server's MCP endpoint |
 | `MCP_HTTP_PATH` | No | `/mcp` | Path the MCP endpoint is served under |
+| `MCP_ALLOWED_ORIGINS` | No | *(none)* | Comma-separated browser origins allowed to call this server. Native MCP clients don't need this — see Security notes |
+| `MCP_ALLOWED_HOSTS` | No | loopback names | Comma-separated `Host` header values to accept (DNS-rebinding protection) |
 
 This server does **not** load `.env` files — export the variables in the shell that runs `npm start`. See `.env.example` for a template.
 
@@ -160,10 +162,19 @@ This server does **not** load `.env` files — export the variables in the shell
 | "Could not reach Super Productivity's Local REST API" | Super Productivity isn't running, or the Local REST API is disabled | Start Super Productivity, enable it in Settings → Misc |
 | `401 Unauthorized` / "Authorization token required" | This installation requires a token that isn't configured | Get the token from Settings → Misc → Access Token, start with `SP_REST_TOKEN=… npm start` |
 | Task counts don't match the Super Productivity UI | Completed tasks are excluded by default | Ask for "including completed tasks" |
+| `403 Forbidden: Origin … is not allowed` | A browser-based client is calling the server | Add its origin to `MCP_ALLOWED_ORIGINS` (see Security notes) |
+| `403 Forbidden: Host header … is not allowed` | Reaching the server through a proxy or a non-loopback name | Add that host to `MCP_ALLOWED_HOSTS` |
 
 ## Security notes
 
-- This server binds to `127.0.0.1` by default, so it's only reachable from the same machine. It has **no authentication** — anything that can reach the port has full control of your Super Productivity data. Don't set `MCP_HTTP_HOST=0.0.0.0` or expose the port through a tunnel/router without putting your own auth in front of it.
+This endpoint has **no authentication**: anything that can reach it has full control of your Super Productivity data, including deleting tasks. Binding to `127.0.0.1` is necessary but *not sufficient* — a web page open in your browser can also reach `127.0.0.1`. Two checks close that hole:
+
+- **Origin allowlist.** Browsers attach an `Origin` header to cross-site requests. Any request with an `Origin` that isn't in `MCP_ALLOWED_ORIGINS` (empty by default) is rejected with `403`, and the server never sends a permissive `Access-Control-Allow-Origin: *`, so a malicious page can't read responses either. Native MCP clients — Claude Cowork, Claude Code, curl — send no `Origin` and are unaffected, so **you normally leave this unset**.
+- **Host allowlist.** Only loopback `Host` values are accepted, which defeats DNS rebinding (where an attacker's domain is pointed at `127.0.0.1` but the `Host` header still carries their domain). Override with `MCP_ALLOWED_HOSTS` only if you front the server with a reverse proxy.
+
+Also:
+
+- Don't set `MCP_HTTP_HOST=0.0.0.0` or expose the port through a tunnel/router without putting your own authentication in front of it. The server prints a warning if you bind off-loopback.
 - The Super Productivity Local REST API likewise only accepts connections from `127.0.0.1`.
 - Treat your `SP_REST_TOKEN`, if you have one, like any other credential — don't commit it, export it in the environment instead of hardcoding it.
 

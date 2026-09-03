@@ -25,6 +25,20 @@
  *   MCP_HTTP_HOST     Host/interface this MCP server binds to (default 127.0.0.1)
  *   MCP_HTTP_PORT     Port this MCP server listens on (default 3877)
  *   MCP_HTTP_PATH     Path the MCP endpoint is served under (default /mcp)
+ *   MCP_ALLOWED_ORIGINS  Comma-separated browser origins allowed to call this
+ *                     server (default: none). See the security note below.
+ *   MCP_ALLOWED_HOSTS Comma-separated Host header values to accept
+ *                     (default: localhost/127.0.0.1/[::1] on the bound port)
+ *
+ * Security: binding to loopback is NOT on its own enough to keep this endpoint
+ * private, because a web page in your browser can also reach 127.0.0.1. Two
+ * checks close that hole, and neither affects native MCP clients:
+ *   - Origin allowlist: browsers always send `Origin` on cross-site fetches.
+ *     Anything with an un-allowlisted `Origin` is rejected, and no permissive
+ *     CORS header is ever sent, so a page cannot read a response either.
+ *     Native clients (Claude Cowork, Claude Code, curl) send no `Origin`.
+ *   - Host allowlist: blocks DNS-rebinding, where an attacker's domain is made
+ *     to resolve to 127.0.0.1 (the `Host` header still carries their domain).
  */
 
 import { createServer } from "node:http";
@@ -39,8 +53,32 @@ const BASE_URL = process.env.SP_REST_BASE_URL || "http://127.0.0.1:3876";
 const TOKEN = process.env.SP_REST_TOKEN;
 
 const HTTP_HOST = process.env.MCP_HTTP_HOST || "127.0.0.1";
-const HTTP_PORT = Number(process.env.MCP_HTTP_PORT || 3877);
 const HTTP_PATH = process.env.MCP_HTTP_PATH || "/mcp";
+
+const HTTP_PORT = Number(process.env.MCP_HTTP_PORT ?? 3877);
+if (!Number.isInteger(HTTP_PORT) || HTTP_PORT < 1 || HTTP_PORT > 65535) {
+  console.error(
+    `Invalid MCP_HTTP_PORT: ${JSON.stringify(process.env.MCP_HTTP_PORT)}. Expected an integer between 1 and 65535.`
+  );
+  process.exit(1);
+}
+
+function parseList(value) {
+  return (value ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Browser origins permitted to call this server. Empty by default — see the security note above. */
+const ALLOWED_ORIGINS = new Set(parseList(process.env.MCP_ALLOWED_ORIGINS));
+
+/** Host header values we answer to. Defaults to loopback names on our own port. */
+const ALLOWED_HOSTS = new Set(
+  parseList(process.env.MCP_ALLOWED_HOSTS).length
+    ? parseList(process.env.MCP_ALLOWED_HOSTS)
+    : ["localhost", "127.0.0.1", "[::1]"].flatMap((h) => [h, `${h}:${HTTP_PORT}`])
+);
 
 /** Thin wrapper around fetch() that talks to the Super Productivity Local REST API. */
 async function spFetch(path, { method = "GET", body } = {}) {
@@ -266,11 +304,33 @@ function buildMcpServer() {
 /** Active Streamable HTTP sessions, keyed by their MCP session id. */
 const sessions = new Map();
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+/**
+ * Decide whether a request may proceed, and apply CORS headers for the
+ * allowlisted-browser case. Returns null when the request is acceptable, or a
+ * human-readable reason to reject it with 403.
+ *
+ * Requests with no `Origin` header are native clients (Claude Cowork, Claude
+ * Code, curl) and get no CORS headers at all — they don't need any.
+ */
+function checkRequestOrigin(req, res) {
+  const host = req.headers.host;
+  if (!host || !ALLOWED_HOSTS.has(host)) {
+    return `Host header ${JSON.stringify(host ?? null)} is not allowed (DNS-rebinding protection). Set MCP_ALLOWED_HOSTS to permit it.`;
+  }
+
+  const origin = req.headers.origin;
+  if (origin === undefined) return null;
+
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    return `Origin ${JSON.stringify(origin)} is not allowed. Set MCP_ALLOWED_ORIGINS to permit it.`;
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, mcp-protocol-version, last-event-id");
   res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+  return null;
 }
 
 function sendJson(res, status, payload) {
@@ -296,8 +356,14 @@ function readBody(req) {
   });
 }
 
+/** Node lowercases header names but repeats arrive as an array; take the first. */
+function sessionIdOf(req) {
+  const raw = req.headers["mcp-session-id"];
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
 async function handleMcpRequestPost(req, res) {
-  const sessionId = req.headers["mcp-session-id"];
+  const sessionId = sessionIdOf(req);
   let body;
   try {
     body = await readBody(req);
@@ -330,6 +396,10 @@ async function handleMcpRequestPost(req, res) {
       onsessioninitialized: (id) => {
         sessions.set(id, { transport, server: mcpServer });
       },
+      // Fired when the client ends the session with DELETE.
+      onsessionclosed: (id) => {
+        sessions.delete(id);
+      },
     });
 
     transport.onclose = () => {
@@ -343,7 +413,7 @@ async function handleMcpRequestPost(req, res) {
 }
 
 async function handleMcpRequestGetOrDelete(req, res) {
-  const sessionId = req.headers["mcp-session-id"];
+  const sessionId = sessionIdOf(req);
   const transport = sessionId ? sessions.get(sessionId)?.transport : undefined;
   if (!transport) {
     return sendJson(res, 400, {
@@ -356,7 +426,14 @@ async function handleMcpRequestGetOrDelete(req, res) {
 }
 
 const http = createServer(async (req, res) => {
-  setCorsHeaders(res);
+  const rejection = checkRequestOrigin(req, res);
+  if (rejection) {
+    return sendJson(res, 403, {
+      jsonrpc: "2.0",
+      error: { code: -32000, message: `Forbidden: ${rejection}` },
+      id: null,
+    });
+  }
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -409,8 +486,15 @@ http.listen(HTTP_PORT, HTTP_HOST, () => {
     `super-productivity-rest-mcp (Streamable HTTP) listening on ` +
       `http://${shown}:${HTTP_PORT}${HTTP_PATH}\n` +
       `Proxying Super Productivity Local REST API at ${BASE_URL}` +
-      (TOKEN ? " (with SP_REST_TOKEN)" : "")
+      (TOKEN ? " (with SP_REST_TOKEN)" : "") +
+      `\nBrowser origins allowed: ${ALLOWED_ORIGINS.size ? [...ALLOWED_ORIGINS].join(", ") : "none"}`
   );
+  if (HTTP_HOST !== "127.0.0.1" && HTTP_HOST !== "localhost" && HTTP_HOST !== "::1") {
+    console.warn(
+      `WARNING: bound to ${HTTP_HOST}, not loopback. This endpoint has no authentication — ` +
+        `anything that can reach it controls your Super Productivity data.`
+    );
+  }
 });
 
 function shutdown() {
